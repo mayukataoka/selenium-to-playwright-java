@@ -27,6 +27,25 @@ Playwright is roughly twice as fast warm, but pays a one-time driver bootstrap
 cost that makes a single cold run look worse. Worth knowing before quoting
 either number: measure warm, and measure more than once.
 
+## Where to look
+
+Two files carry most of what this repository is trying to show.
+
+**The test bodies.** Open `SeleniumTaskListTest` and `PlaywrightTaskListTest`
+side by side. The lines that drive the app are identical; the lines that changed
+are all assertions. Every `WebDriverWait` / `ExpectedConditions` on the left has
+no counterpart on the right — it was absorbed into a retrying `assertThat(locator)`.
+
+**The lifecycle.** Compare the setup and teardown. Selenium constructs a
+`ChromeDriver` in `@BeforeEach` and must `quit()` it in `@AfterEach`, because a
+driver *is* a browser process. Playwright splits that into a hierarchy —
+`Playwright` → `Browser` → `BrowserContext` → `Page` — and launches the browser
+once per class in `@BeforeAll`, handing each test a fresh `BrowserContext`
+instead. A context is an isolated cookie jar and storage partition that costs
+milliseconds, so per-test isolation stops being something a suite has to trade
+away for speed. That is the reason for the split: the expensive object is shared,
+the isolating one is not.
+
 ## Line-by-line mapping
 
 | Intent | Selenium | Playwright |
