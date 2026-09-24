@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Task Cards (Web Components)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 16px; }
+    h2 { font-size: 15px; color: #555; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <h1>Task Cards</h1>
+
+  <h2>1. Open shadow root</h2>
+  <task-card title="buy milk"></task-card>
+
+  <h2>2. Nested shadow roots (a component inside a component)</h2>
+  <task-panel heading="This week"></task-panel>
+
+  <h2>3. Closed shadow root</h2>
+  <secure-note></secure-note>
+
+  <h2>4. Light DOM, for contrast</h2>
+  <p data-testid="light-dom-text">This node is in the main document.</p>
+
+<script>
+  // --- 1. a component with an OPEN shadow root -----------------------------
+  class TaskCard extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({ mode: 'open' });
+      root.innerHTML = `
+        <style>
+          .card { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }
+          .archived .title { text-decoration: line-through; color: #888; }
+        </style>
+        <div class="card">
+          <span class="title" data-testid="card-title">${this.getAttribute('title')}</span>
+          <button data-testid="card-action">Archive</button>
+          <span data-testid="card-status">active</span>
+        </div>`;
+      root.querySelector('[data-testid=card-action]').addEventListener('click', () => {
+        root.querySelector('.card').classList.add('archived');
+        root.querySelector('[data-testid=card-status]').textContent = 'archived';
+      });
+    }
+  }
+  customElements.define('task-card', TaskCard);
+
+  // --- 2. a component that itself contains a component ---------------------
+  class TaskPanel extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({ mode: 'open' });
+      root.innerHTML = `
+        <h3 data-testid="panel-heading">${this.getAttribute('heading')}</h3>
+        <task-card title="nested task"></task-card>`;
+    }
+  }
+  customElements.define('task-panel', TaskPanel);
+
+  // --- 3. a CLOSED shadow root: no element.shadowRoot handle exists ---------
+  class SecureNote extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({ mode: 'closed' });
+      root.innerHTML = `<span data-testid="secret">hidden from every automation tool</span>`;
+    }
+  }
+  customElements.define('secure-note', SecureNote);
+</script>
+</body>
+</html>

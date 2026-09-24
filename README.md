@@ -123,3 +123,77 @@ explicit waits in Playwright and wondering why it is still flaky.
 So the page object layer survives the migration, but its **state-reading half
 has to be rewritten to return `Locator`s** while its action half stays as it is.
 That asymmetry is the part that does not show up in a syntax mapping table.
+
+## Shadow DOM: where the migration stops being mechanical
+
+`app/shadow.html` adds three web components — one with an open shadow root, one
+nesting a component inside another, and one with a closed root — plus a
+light-DOM node for contrast. `SeleniumShadowDomTest` and
+`PlaywrightShadowDomTest` cover them.
+
+These two classes deliberately do **not** go through a page object. What is
+under comparison is the selector layer itself, and a page object would hide the
+exact thing being demonstrated.
+
+**Selenium cannot cross a shadow boundary with a selector.** An ordinary CSS
+query finds nothing; you have to take the host element and step through
+`getShadowRoot()`, which returns a `SearchContext` to query from:
+
+```java
+assertEquals(0, driver.findElements(By.cssSelector("[data-testid=card-title]")).size());
+
+SearchContext shadow = driver.findElement(By.cssSelector("task-card")).getShadowRoot();
+assertEquals("buy milk", shadow.findElement(By.cssSelector("[data-testid=card-title]")).getText());
+```
+
+**Playwright pierces open roots automatically,** at any depth, with no
+shadow-specific API:
+
+```java
+assertThat(page.getByTestId("card-title").first()).hasText("buy milk");
+```
+
+Nesting is where the gap widens — Selenium needs one hop per boundary:
+
+```java
+SearchContext panel = driver.findElement(By.cssSelector("task-panel")).getShadowRoot();
+SearchContext card  = panel.findElement(By.cssSelector("task-card")).getShadowRoot();
+card.findElement(By.cssSelector("[data-testid=card-title]"));
+```
+```java
+page.locator("task-panel").getByTestId("card-title");   // unchanged
+```
+
+| | Selenium | Playwright |
+|---|---|---|
+| Open shadow root | `getShadowRoot()` per host | automatic |
+| Nested roots | one hop per boundary | automatic, any depth |
+| XPath inside a root | not supported — CSS only | not applicable |
+| Closed shadow root | **reachable** (see below) | not reachable |
+
+### Two findings that came out of writing these tests
+
+**XPath does not work inside a shadow root.** A `ShadowRoot` is not a `Document`,
+so there is no context to evaluate an XPath against — `By.cssSelector` is the
+only reliable locator once you are inside. A Selenium suite built on XPath
+locators hits this the moment the app adopts web components, and it is not a
+find-and-replace fix.
+
+**A closed shadow root is reachable from Selenium, and not from Playwright.**
+This is the opposite of what "closed" suggests, so the test asserts it rather
+than describing it:
+
+```java
+// in-page JavaScript sees null, exactly as the spec says
+assertNull(js.executeScript("return document.querySelector('secure-note').shadowRoot;"));
+
+// Selenium does not use element.shadowRoot - it goes over the WebDriver
+// protocol, which the browser grants privileged access to
+SearchContext closedRoot = host.getShadowRoot();
+assertEquals("hidden...", closedRoot.findElement(By.cssSelector("[data-testid=secret]")).getText());
+```
+
+The Playwright suite asserts `hasCount(0)` for the same element. So "a closed
+root is unreachable by any tool" is true of the DOM API and false of Selenium —
+worth being precise about, because it is the kind of claim an interviewer who
+has actually debugged it will push back on.
