@@ -2,6 +2,7 @@ package com.mayu.tasks;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
+import com.mayu.tasks.pages.PlaywrightTaskListPage;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
@@ -16,11 +17,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The Playwright version of the same five scenarios.
+ * Playwright version, driven through a page object.
  *
- * <p>Two structural differences from the Selenium test: the browser is launched once for the whole
- * class and each test gets a fresh isolated BrowserContext (cheap, so isolation costs nothing), and
- * there are no explicit waits - every assertThat() retries until it passes or times out.
+ * <p>Compare the action lines with the Selenium test: they are identical, because both page objects
+ * expose the same action API. Only the assertions changed - and they changed on purpose, from
+ * reading a value to asserting on a Locator, which is what removes the explicit waits.
  */
 class PlaywrightTaskListTest {
 
@@ -30,7 +31,7 @@ class PlaywrightTaskListTest {
   private static Browser browser;
 
   private BrowserContext context;
-  private Page page;
+  private PlaywrightTaskListPage tasks;
 
   @BeforeAll
   static void launchBrowser() {
@@ -45,10 +46,9 @@ class PlaywrightTaskListTest {
 
   @BeforeEach
   void newContext() {
-    // A fresh context per test: isolated cookies and storage, milliseconds to create.
     context = browser.newContext();
-    page = context.newPage();
-    page.navigate(BASE + "/");
+    Page page = context.newPage();
+    tasks = new PlaywrightTaskListPage(page).open(BASE);
   }
 
   @AfterEach
@@ -59,52 +59,49 @@ class PlaywrightTaskListTest {
   @Test
   @DisplayName("starts empty")
   void startsEmpty() {
-    assertThat(page.getByTestId("empty-state")).isVisible();
-    assertThat(page.getByTestId("task-item")).hasCount(0);
-    assertThat(page.getByTestId("counter")).containsText("0 remaining");
+    assertThat(tasks.emptyState()).isVisible();
+    assertThat(tasks.tasks()).hasCount(0);
+    assertThat(tasks.counter()).containsText("0 remaining");
   }
 
   @Test
   @DisplayName("adds a task")
   void addsATask() {
-    page.locator("#new-task-input").fill("buy milk");
-    page.getByTestId("add-button").click();
+    tasks.addTask("buy milk");
 
-    // No explicit wait: the assertion itself retries.
-    assertThat(page.getByTestId("task-item")).hasCount(1);
-    assertThat(page.getByTestId("task-title")).hasText("buy milk");
-    assertThat(page.getByTestId("counter")).containsText("1 remaining");
+    assertThat(tasks.tasks()).hasCount(1);
+    assertThat(tasks.firstTaskTitle()).hasText("buy milk");
+    assertThat(tasks.counter()).containsText("1 remaining");
   }
 
   @Test
   @DisplayName("rejects an empty task")
   void rejectsAnEmptyTask() {
-    page.getByTestId("add-button").click();
-    assertThat(page.getByTestId("task-item")).hasCount(0);
+    tasks.submitEmptyTask();
+
+    assertThat(tasks.tasks()).hasCount(0);
   }
 
   @Test
   @DisplayName("marks a task done and decrements the counter")
   void marksATaskDone() {
-    page.locator("#new-task-input").fill("write tests");
-    page.locator("#new-task-input").press("Enter");
+    tasks.addTask("write tests");
 
-    page.getByTestId("toggle").check();
+    tasks.toggleFirstTask();
 
-    assertThat(page.getByTestId("task-item").first()).hasClass(Pattern.compile("done"));
-    assertThat(page.getByTestId("counter")).containsText("0 remaining");
+    assertThat(tasks.firstTask()).hasClass(Pattern.compile("done"));
+    assertThat(tasks.counter()).containsText("0 remaining");
   }
 
   @Test
   @DisplayName("deletes a task")
   void deletesATask() {
-    page.locator("#new-task-input").fill("temporary");
-    page.locator("#new-task-input").press("Enter");
-    assertThat(page.getByTestId("task-item")).hasCount(1);
+    tasks.addTask("temporary");
+    assertThat(tasks.tasks()).hasCount(1);
 
-    page.getByTestId("delete").click();
+    tasks.deleteFirstTask();
 
-    assertThat(page.getByTestId("task-item")).hasCount(0);
-    assertThat(page.getByTestId("empty-state")).isVisible();
+    assertThat(tasks.tasks()).hasCount(0);
+    assertThat(tasks.emptyState()).isVisible();
   }
 }

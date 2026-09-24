@@ -64,3 +64,43 @@ either number: measure warm, and measure more than once.
   asserts on the locator and lets the assertion do the polling. Porting
   `assertEquals(expected, el.getText())` to `assertThat(loc).hasText(expected)`
   is not cosmetic — it is what removes the race.
+
+## Keeping the Page Object Model across the migration
+
+Both suites are driven through a page object (`pages/SeleniumTaskListPage`,
+`pages/PlaywrightTaskListPage`). Keeping that layer is what makes a migration
+incremental rather than a rewrite: the page object is the only thing that knows
+which driver is underneath, so it absorbs the change.
+
+Measured on these five tests, after introducing the page objects:
+
+| | Selenium test | Playwright test |
+|---|---|---|
+| Action calls (`addTask`, `deleteFirstTask`, …) | identical | identical |
+| Explicit waits in the test body | 5 | **0** |
+
+The action API is deliberately the same on both page objects, so the lines that
+*drive* the app survived the migration untouched. What changed is the assertions.
+
+### The trap: a page object that returns values
+
+The obvious way to write a page object is to have it return resolved values —
+`String firstTaskTitle()`, `int taskCount()`. That works in Selenium, and it is
+exactly what to avoid in Playwright:
+
+```java
+// Selenium page object - returns a value, so the test must wait first
+public int taskCount() { return driver.findElements(TASK_ITEM).size(); }
+
+// Playwright page object - returns a Locator, so the assertion can retry
+public Locator tasks() { return page.getByTestId("task-item"); }
+```
+
+A resolved value is read once, at the moment it is called. If the page object
+hands the test a `String`, the test can only assert on a snapshot, and the
+auto-waiting the migration was *for* is thrown away — you end up reintroducing
+explicit waits in Playwright and wondering why it is still flaky.
+
+So the page object layer survives the migration, but its **state-reading half
+has to be rewritten to return `Locator`s** while its action half stays as it is.
+That asymmetry is the part that does not show up in a syntax mapping table.
